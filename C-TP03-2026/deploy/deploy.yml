@@ -5,6 +5,7 @@
 
   vars:
     deploy_path: "{{ deploy_path | default('/var/www/your_name') }}"
+    workspace_app_dir: "{{ workspace_app_dir | default(lookup('env', 'WORKSPACE')) }}"
     release_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
     release_path: "{{ deploy_path }}/releases/{{ release_id }}"
     current_link: "{{ deploy_path }}/current"
@@ -35,7 +36,7 @@
 
     - name: Sync project files to remote host
       ansible.posix.synchronize:
-        src: "{{ lookup('env', 'WORKSPACE') }}/"
+        src: "{{ workspace_app_dir }}/"
         dest: "{{ release_path }}/"
         recursive: true
         delete: true

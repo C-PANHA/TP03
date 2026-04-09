@@ -42,40 +42,47 @@ pipeline {
 
         stage('Build') {
             steps {
-                sh '''
-                    set -e
-                    [ -f .env ] || cp .env.example .env
-                    composer install --no-interaction --prefer-dist --no-progress
-                    php artisan key:generate --force
-                    npm install
-                    npm run build
-                '''
+                dir('C-TP03-2026') {
+                    sh '''
+                        set -e
+                        [ -f .env ] || cp .env.example .env
+                        composer install --no-interaction --prefer-dist --no-progress
+                        php artisan key:generate --force
+                        npm install
+                        npm run build
+                    '''
+                }
             }
         }
 
         stage('Test') {
             steps {
-                sh 'php artisan test'
+                dir('C-TP03-2026') {
+                    sh 'php artisan test'
+                }
             }
         }
 
         stage('Deploy') {
             steps {
                 script {
-                    writeFile file: 'deploy/inventory.ini', text: """[web]\n${params.DEPLOY_HOST} ansible_user=${params.DEPLOY_USER}\n"""
+                    dir('C-TP03-2026') {
+                        writeFile file: 'deploy/inventory.ini', text: """[web]\n${params.DEPLOY_HOST} ansible_user=${params.DEPLOY_USER}\n"""
 
-                    try {
-                        sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                            withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
-                                sh """
-                                    ansible-playbook -i deploy/inventory.ini deploy/deploy.yml \\
-                                      --extra-vars \"deploy_path=${params.DEPLOY_PATH}\"
-                                """
+                        try {
+                            sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                                withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
+                                    sh """
+                                        ansible-playbook -i deploy/inventory.ini deploy/deploy.yml \\
+                                          --extra-vars \"deploy_path=${params.DEPLOY_PATH}\" \\
+                                          --extra-vars \"workspace_app_dir=${env.WORKSPACE}/C-TP03-2026\"
+                                    """
+                                }
                             }
+                        } catch (Exception err) {
+                            env.DEPLOY_FAILED = 'true'
+                            throw err
                         }
-                    } catch (Exception err) {
-                        env.DEPLOY_FAILED = 'true'
-                        throw err
                     }
                 }
             }
@@ -90,12 +97,14 @@ pipeline {
                 if (env.DEPLOY_FAILED == 'true') {
                     echo 'Deploy stage failed. Attempting rollback to previous release...'
                     try {
-                        sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
-                            withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
-                                sh """
-                                    ansible-playbook -i deploy/inventory.ini deploy/rollback.yml \\
-                                      --extra-vars \"deploy_path=${params.DEPLOY_PATH}\"
-                                """
+                        dir('C-TP03-2026') {
+                            sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                                withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
+                                    sh """
+                                        ansible-playbook -i deploy/inventory.ini deploy/rollback.yml \\
+                                          --extra-vars \"deploy_path=${params.DEPLOY_PATH}\"
+                                    """
+                                }
                             }
                         }
                         message = "${message}\nRollback executed successfully."
