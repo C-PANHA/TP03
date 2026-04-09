@@ -34,8 +34,14 @@ pipeline {
                 sh '''
                     set -e
                     git --version
-                    rm -rf .git
-                    git clone --depth 1 --branch master https://github.com/C-PANHA/TP03.git .
+                    if [ ! -d .git ]; then
+                        git init
+                    fi
+                    git remote remove origin >/dev/null 2>&1 || true
+                    git remote add origin https://github.com/C-PANHA/TP03.git
+                    git fetch --depth 1 origin master
+                    git reset --hard FETCH_HEAD
+                    git clean -fdx
                 '''
             }
         }
