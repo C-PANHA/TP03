@@ -31,7 +31,12 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                checkout scm
+                sh '''
+                    set -e
+                    git --version
+                    rm -rf .git
+                    git clone --depth 1 --branch master https://github.com/C-PANHA/TP03.git .
+                '''
             }
         }
 
