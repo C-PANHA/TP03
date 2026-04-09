@@ -1,0 +1,26 @@
+---
+- name: Rollback Laravel app to previous release
+  hosts: web
+  gather_facts: false
+
+  vars:
+    deploy_path: "{{ deploy_path | default('/var/www/your_name') }}"
+    current_link: "{{ deploy_path }}/current"
+    previous_link: "{{ deploy_path }}/previous"
+
+  tasks:
+    - name: Check previous symlink exists
+      ansible.builtin.stat:
+        path: "{{ previous_link }}"
+      register: previous_stat
+
+    - name: Rollback current symlink to previous release
+      ansible.builtin.shell: |
+        PREVIOUS_TARGET="$(readlink -f "{{ previous_link }}")"
+        ln -sfn "$PREVIOUS_TARGET" "{{ current_link }}"
+      when: previous_stat.stat.islnk is defined and previous_stat.stat.islnk
+
+    - name: Fail if no previous release is available
+      ansible.builtin.fail:
+        msg: "No previous symlink found at {{ previous_link }}. Rollback not possible."
+      when: previous_stat.stat.islnk is not defined or not previous_stat.stat.islnk

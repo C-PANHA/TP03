@@ -1,43 +1,136 @@
-pipeline{
+pipeline {
     agent {
         label 'laravel'
     }
 
-    stages{
-        stage('Build'){
-            steps{
-                echo 'Building...'
+    environment {
+        DEPLOY_FAILED = 'false'
+    }
+
+    options {
+        timestamps()
+        skipDefaultCheckout(true)
+    }
+
+    triggers {
+        // Build automatically every minute if SCM changes are detected.
+        pollSCM('*/1 * * * *')
+    }
+
+    parameters {
+        string(name: 'DEPLOY_HOST', defaultValue: '178.128.93.188', description: 'Target server IP or hostname')
+        string(name: 'DEPLOY_USER', defaultValue: 'root', description: 'SSH user used by Ansible')
+        string(name: 'DEPLOY_PATH', defaultValue: '/var/www/your_name', description: 'Remote deploy path')
+        string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'deploy-ssh', description: 'Jenkins SSH private key credentials ID')
+        string(name: 'MAIL_TO', defaultValue: '', description: 'Optional failure email recipient (comma-separated)')
+        booleanParam(name: 'ENABLE_TELEGRAM', defaultValue: false, description: 'Send Telegram notification on failure')
+        string(name: 'TELEGRAM_BOT_TOKEN_CREDENTIALS_ID', defaultValue: 'telegram-bot-token', description: 'Jenkins Secret Text credentials ID for Telegram bot token')
+        string(name: 'TELEGRAM_CHAT_ID_CREDENTIALS_ID', defaultValue: 'telegram-chat-id', description: 'Jenkins Secret Text credentials ID for Telegram chat ID')
+    }
+
+    stages {
+        stage('Checkout') {
+            steps {
                 checkout scm
-
-                echo 'Copy env file...'
-                sh 'cp .env.example .env'
-
-                echo 'Configuring database...'  
-                //ssh 'sed -i "s/DB_HOST=.*/DB_HOST=localhost/" .env'
-                //ssh 'sed -i "s/DB_PORT=.*/DB_PORT=3306/" .env'
-                //ssh 'sed -i "s/DB_DATABASE=.*/DB_DATABASE=laravel/" .env'
-                //ssh 'sed -i "s/DB_USERNAME=.*/DB_USERNAME=root/" .env'
-                //ssh 'sed -i "s/DB_PASSWORD=.*/DB_PASSWORD=/" .env'
-
-                echo 'Installing dependencies...'
-                sh 'composer install'
-                sh 'npm install'
-
-                echo 'Generating application key...'
-                sh 'php artisan key:generate'
-                       }
+            }
         }
-        stage('Test'){
-            steps{
-                echo 'Testing...'
+
+        stage('Build') {
+            steps {
+                sh '''
+                    set -e
+                    [ -f .env ] || cp .env.example .env
+                    composer install --no-interaction --prefer-dist --no-progress
+                    php artisan key:generate --force
+                    npm install
+                    npm run build
+                '''
+            }
+        }
+
+        stage('Test') {
+            steps {
                 sh 'php artisan test'
             }
         }
-        // stage('Deploy'){
-        //     steps{
-        //         echo 'Deploying...'
-        //         sh 'ansible-playbook -i inventory.ini deploy.yml'
-        //     }
-        // }
+
+        stage('Deploy') {
+            steps {
+                script {
+                    writeFile file: 'deploy/inventory.ini', text: """[web]\n${params.DEPLOY_HOST} ansible_user=${params.DEPLOY_USER}\n"""
+
+                    try {
+                        sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                            withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
+                                sh """
+                                    ansible-playbook -i deploy/inventory.ini deploy/deploy.yml \\
+                                      --extra-vars \"deploy_path=${params.DEPLOY_PATH}\"
+                                """
+                            }
+                        }
+                    } catch (Exception err) {
+                        env.DEPLOY_FAILED = 'true'
+                        throw err
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        failure {
+            script {
+                def message = "[${env.JOB_NAME}] #${env.BUILD_NUMBER} failed. Check ${env.BUILD_URL}"
+
+                if (env.DEPLOY_FAILED == 'true') {
+                    echo 'Deploy stage failed. Attempting rollback to previous release...'
+                    try {
+                        sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                            withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
+                                sh """
+                                    ansible-playbook -i deploy/inventory.ini deploy/rollback.yml \\
+                                      --extra-vars \"deploy_path=${params.DEPLOY_PATH}\"
+                                """
+                            }
+                        }
+                        message = "${message}\nRollback executed successfully."
+                    } catch (Exception rollbackErr) {
+                        echo 'Rollback failed.'
+                        message = "${message}\nRollback failed. Please check Jenkins logs."
+                    }
+                }
+
+                if (params.MAIL_TO?.trim()) {
+                    try {
+                        emailext(
+                            to: params.MAIL_TO,
+                            subject: "Jenkins FAILED: ${env.JOB_NAME} #${env.BUILD_NUMBER}",
+                            body: """${message}\n\nBranch: ${env.BRANCH_NAME ?: 'N/A'}\nCommit: ${env.GIT_COMMIT ?: 'N/A'}"""
+                        )
+                    } catch (Exception ignored) {
+                        echo 'Email notification skipped (email plugin not installed or misconfigured).'
+                    }
+                }
+
+                if (params.ENABLE_TELEGRAM) {
+                    try {
+                        withCredentials([
+                            string(credentialsId: params.TELEGRAM_BOT_TOKEN_CREDENTIALS_ID, variable: 'TG_TOKEN'),
+                            string(credentialsId: params.TELEGRAM_CHAT_ID_CREDENTIALS_ID, variable: 'TG_CHAT_ID')
+                        ]) {
+                            withEnv(["TELEGRAM_MESSAGE=${message}"]) {
+                                sh '''
+                                    curl -sS -X POST "https://api.telegram.org/bot${TG_TOKEN}/sendMessage" \\
+                                      --data-urlencode "chat_id=${TG_CHAT_ID}" \\
+                                      --data-urlencode "text=${TELEGRAM_MESSAGE}" >/dev/null
+                                '''
+                            }
+                        }
+                    } catch (Exception ignored) {
+                        echo 'Telegram notification skipped (credentials missing or Telegram API call failed).'
+                    }
+                }
+            }
+        }
     }
 }

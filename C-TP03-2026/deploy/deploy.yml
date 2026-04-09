@@ -1,0 +1,93 @@
+---
+- name: Deploy Laravel app
+  hosts: web
+  gather_facts: false
+
+  vars:
+    deploy_path: "{{ deploy_path | default('/var/www/your_name') }}"
+    release_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
+    release_path: "{{ deploy_path }}/releases/{{ release_id }}"
+    current_link: "{{ deploy_path }}/current"
+    previous_link: "{{ deploy_path }}/previous"
+    shared_env: "{{ deploy_path }}/shared/.env"
+
+  tasks:
+    - name: Ensure deploy directory exists
+      ansible.builtin.file:
+        path: "{{ deploy_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Ensure release and shared directories exist
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: '0755'
+      loop:
+        - "{{ deploy_path }}/releases"
+        - "{{ deploy_path }}/shared"
+
+    - name: Ensure release directory exists
+      ansible.builtin.file:
+        path: "{{ release_path }}"
+        state: directory
+        mode: '0755'
+
+    - name: Sync project files to remote host
+      ansible.posix.synchronize:
+        src: "{{ lookup('env', 'WORKSPACE') }}/"
+        dest: "{{ release_path }}/"
+        recursive: true
+        delete: true
+        rsync_opts:
+          - "--exclude=.git"
+          - "--exclude=node_modules"
+          - "--exclude=vendor"
+          - "--exclude=storage/logs"
+
+    - name: Ensure shared .env exists on target
+      ansible.builtin.shell: |
+        if [ ! -f "{{ shared_env }}" ] && [ -f .env.example ]; then
+          cp .env.example "{{ shared_env }}"
+        fi
+      args:
+        chdir: "{{ release_path }}"
+
+    - name: Link shared .env into release
+      ansible.builtin.file:
+        src: "{{ shared_env }}"
+        dest: "{{ release_path }}/.env"
+        state: link
+
+    - name: Install PHP dependencies
+      ansible.builtin.command: composer install --no-interaction --prefer-dist --optimize-autoloader
+      args:
+        chdir: "{{ release_path }}"
+
+    - name: Generate Laravel key
+      ansible.builtin.command: php artisan key:generate --force
+      args:
+        chdir: "{{ release_path }}"
+
+    - name: Install Node dependencies
+      ansible.builtin.command: npm install
+      args:
+        chdir: "{{ release_path }}"
+
+    - name: Build frontend assets
+      ansible.builtin.command: npm run build
+      args:
+        chdir: "{{ release_path }}"
+
+    - name: Save current release as previous symlink
+      ansible.builtin.shell: |
+        if [ -L "{{ current_link }}" ]; then
+          CURRENT_TARGET="$(readlink -f "{{ current_link }}")"
+          ln -sfn "$CURRENT_TARGET" "{{ previous_link }}"
+        fi
+
+    - name: Switch current symlink to new release
+      ansible.builtin.file:
+        src: "{{ release_path }}"
+        dest: "{{ current_link }}"
+        state: link
