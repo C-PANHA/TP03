@@ -76,12 +76,15 @@ pipeline {
                         writeFile file: 'deploy/inventory.ini', text: """[web]\n${params.DEPLOY_HOST} ansible_user=${params.DEPLOY_USER}\n"""
 
                         try {
-                            sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                            withCredentials([
+                                sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_FILE')
+                            ]) {
                                 withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
                                     sh """
                                         ansible-playbook -i deploy/inventory.ini deploy/deploy.yml \\
                                           --extra-vars \"deploy_path=${params.DEPLOY_PATH}\" \\
-                                          --extra-vars \"workspace_app_dir=${env.WORKSPACE}/C-TP03-2026\"
+                                          --extra-vars \"workspace_app_dir=${env.WORKSPACE}/C-TP03-2026\" \\
+                                          --private-key \"$SSH_KEY_FILE\"
                                     """
                                 }
                             }
@@ -104,11 +107,14 @@ pipeline {
                     echo 'Deploy stage failed. Attempting rollback to previous release...'
                     try {
                         dir('C-TP03-2026') {
-                            sshagent(credentials: [params.SSH_CREDENTIALS_ID]) {
+                            withCredentials([
+                                sshUserPrivateKey(credentialsId: params.SSH_CREDENTIALS_ID, keyFileVariable: 'SSH_KEY_FILE')
+                            ]) {
                                 withEnv(['ANSIBLE_HOST_KEY_CHECKING=False']) {
                                     sh """
                                         ansible-playbook -i deploy/inventory.ini deploy/rollback.yml \\
-                                          --extra-vars \"deploy_path=${params.DEPLOY_PATH}\"
+                                          --extra-vars \"deploy_path=${params.DEPLOY_PATH}\" \\
+                                          --private-key \"$SSH_KEY_FILE\"
                                     """
                                 }
                             }
