@@ -4,7 +4,7 @@
   gather_facts: false
 
   vars:
-    deploy_path: "{{ deploy_path | default('/var/www/your_name') }}"
+    deploy_path: "{{ deploy_path | default('/var/www/Chhum_Panha') }}"
     workspace_app_dir: "{{ workspace_app_dir | default(lookup('env', 'WORKSPACE')) }}"
     release_id: "{{ lookup('pipe', 'date +%Y%m%d%H%M%S') }}"
     release_path: "{{ deploy_path }}/releases/{{ release_id }}"

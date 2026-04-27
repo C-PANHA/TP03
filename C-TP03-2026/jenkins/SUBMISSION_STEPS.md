@@ -11,6 +11,12 @@ Run these commands from workspace root:
 
 Expected image contains Ansible, PHP, Composer, and Node tools.
 
+Quick verification (optional):
+
+1. `docker run --rm jenkins-laravel-agent:latest ansible --version`
+2. `docker run --rm jenkins-laravel-agent:latest php -v`
+3. `docker run --rm jenkins-laravel-agent:latest composer --version`
+
 ## Step 2 - Add Jenkins agent with label `laravel`
 
 In Jenkins UI:
@@ -32,6 +38,7 @@ Install these plugins:
 3. SSH Agent
 4. Credentials Binding
 5. Email Extension
+6. (Optional) Build Failure Analyzer
 
 ## Step 4 - Create required credentials
 
@@ -42,6 +49,12 @@ Required IDs used by pipeline:
 3. `telegram-chat-id` (Secret text, optional)
 
 You can create them from Jenkins UI or Script Console using `jenkins/create-credentials.groovy`.
+
+If using email alerts, also configure SMTP first:
+
+1. Manage Jenkins > System > Extended E-mail Notification
+2. Set SMTP server and test recipient
+3. Save
 
 ## Step 5 - Create pipeline job from SCM
 
@@ -58,7 +71,16 @@ You can create them from Jenkins UI or Script Console using `jenkins/create-cred
 
 1. DEPLOY_HOST=178.128.93.188
 2. DEPLOY_USER=root (or your server user)
-3. DEPLOY_PATH=/var/www/your_name
+3. DEPLOY_PATH=/var/www/Chhum_Panha
 4. SSH_CREDENTIALS_ID=deploy-ssh
 5. MAIL_TO=<your_email_optional>
 6. ENABLE_TELEGRAM=true/false
+
+## Step 6 - Verify trigger, deploy, and notification
+
+1. Commit a small change to repository and push to `master`.
+2. Wait up to 1 minute (pipeline uses `pollSCM('*/1 * * * *')`).
+3. Confirm job starts automatically.
+4. Confirm deploy target in console contains host `178.128.93.188` and path `/var/www/Chhum_Panha`.
+5. To test failure notification, set wrong `DEPLOY_PATH` once (for example `/var/www/not-exist-path`) and run build.
+6. Confirm you receive either email (`MAIL_TO`) or Telegram (`ENABLE_TELEGRAM=true`) failure message.

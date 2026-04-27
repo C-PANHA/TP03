@@ -20,7 +20,7 @@ pipeline {
     parameters {
         string(name: 'DEPLOY_HOST', defaultValue: '178.128.93.188', description: 'Target server IP or hostname')
         string(name: 'DEPLOY_USER', defaultValue: 'root', description: 'SSH user used by Ansible')
-        string(name: 'DEPLOY_PATH', defaultValue: '/var/www/your_name', description: 'Remote deploy path')
+        string(name: 'DEPLOY_PATH', defaultValue: '/var/www/Chhum_Panha', description: 'Remote deploy path')
         string(name: 'SSH_CREDENTIALS_ID', defaultValue: 'deploy-ssh', description: 'Jenkins SSH private key credentials ID')
         string(name: 'MAIL_TO', defaultValue: '', description: 'Optional failure email recipient (comma-separated)')
         booleanParam(name: 'ENABLE_TELEGRAM', defaultValue: false, description: 'Send Telegram notification on failure')

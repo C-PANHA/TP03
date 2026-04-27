@@ -4,7 +4,7 @@
   gather_facts: false
 
   vars:
-    deploy_path: "{{ deploy_path | default('/var/www/your_name') }}"
+    deploy_path: "{{ deploy_path | default('/var/www/Chhum_Panha') }}"
     current_link: "{{ deploy_path }}/current"
     previous_link: "{{ deploy_path }}/previous"
 
